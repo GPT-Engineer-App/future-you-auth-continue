@@ -1,34 +1,64 @@
 import { Box, Flex, VStack, HStack, Text, Input, Avatar, Button, IconButton, Textarea } from "@chakra-ui/react";
-import { FaSearch, FaHome, FaUser, FaBriefcase, FaEnvelope, FaThumbsUp, FaComment } from "react-icons/fa";
+import { FaSearch, FaHome, FaUser, FaBriefcase, FaEnvelope, FaThumbsUp, FaComment, FaShare } from "react-icons/fa";
 import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
+import InfiniteScroll from "react-infinite-scroll-component";
+import RichTextEditor from "react-rte";
 
 const Home = () => {
   const [posts, setPosts] = useState([]);
-  const [newPost, setNewPost] = useState("");
+  const [newPost, setNewPost] = useState(RichTextEditor.createEmptyValue());
   const [activities, setActivities] = useState([]);
   const [jobRecommendations, setJobRecommendations] = useState([]);
+  const [userPreferences, setUserPreferences] = useState({});
+  const [userInterests, setUserInterests] = useState([]);
+  const [activityHistory, setActivityHistory] = useState([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    // Fetch posts, activities, and job recommendations from the server
+    // Fetch initial data from the server
     const fetchData = async () => {
       try {
-        const postsResponse = await fetch("/api/posts");
-        const activitiesResponse = await fetch("/api/activities");
-        const jobRecommendationsResponse = await fetch("/api/job-recommendations");
+        const [postsResponse, activitiesResponse, jobRecommendationsResponse, preferencesResponse, interestsResponse, historyResponse] = await Promise.all([
+          fetch("/api/posts"),
+          fetch("/api/activities"),
+          fetch("/api/job-recommendations"),
+          fetch("/api/user/preferences"),
+          fetch("/api/user/interests"),
+          fetch("/api/user/activity-history")
+        ]);
 
-        const postsData = await postsResponse.json();
-        const activitiesData = await activitiesResponse.json();
-        const jobRecommendationsData = await jobRecommendationsResponse.json();
+        const [postsData, activitiesData, jobRecommendationsData, preferencesData, interestsData, historyData] = await Promise.all([
+          postsResponse.json(),
+          activitiesResponse.json(),
+          jobRecommendationsResponse.json(),
+          preferencesResponse.json(),
+          interestsResponse.json(),
+          historyResponse.json()
+        ]);
 
         setPosts(postsData);
         setActivities(activitiesData);
         setJobRecommendations(jobRecommendationsData);
+        setUserPreferences(preferencesData);
+        setUserInterests(interestsData);
+        setActivityHistory(historyData);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
     };
 
     fetchData();
+
+    // Setup WebSocket connection for real-time updates
+    const socket = io();
+    socket.on("newPost", (post) => setPosts((prevPosts) => [post, ...prevPosts]));
+    socket.on("notification", (notification) => setNotifications((prevNotifications) => [notification, ...prevNotifications]));
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const handlePostSubmit = async () => {
@@ -38,13 +68,13 @@ const Home = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ content: newPost }),
+        body: JSON.stringify({ content: newPost.toString("html") }),
       });
 
       if (response.ok) {
         const newPostData = await response.json();
         setPosts([newPostData, ...posts]);
-        setNewPost("");
+        setNewPost(RichTextEditor.createEmptyValue());
       } else {
         console.error("Failed to create post");
       }
@@ -52,6 +82,68 @@ const Home = () => {
       console.error("Error:", error);
     }
   };
+
+  const fetchMorePosts = async () => {
+    try {
+      const response = await fetch(`/api/posts?offset=${posts.length}`);
+      const morePosts = await response.json();
+      if (morePosts.length === 0) {
+        setHasMore(false);
+      } else {
+        setPosts((prevPosts) => [...prevPosts, ...morePosts]);
+      }
+    } catch (error) {
+      console.error("Error fetching more posts:", error);
+    }
+  };
+
+  const handleLike = async (postId) => {
+    try {
+      await fetch(`/api/posts/${postId}/like`, { method: "POST" });
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId ? { ...post, likes: post.likes + 1 } : post
+        )
+      );
+    } catch (error) {
+      console.error("Error liking post:", error);
+    }
+  };
+
+  const handleComment = async (postId, comment) => {
+    try {
+      const response = await fetch(`/api/posts/${postId}/comment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ comment }),
+      });
+
+      if (response.ok) {
+        const newComment = await response.json();
+        setPosts((prevPosts) =>
+          prevPosts.map((post) =>
+            post.id === postId ? { ...post, comments: [...post.comments, newComment] } : post
+          )
+        );
+      } else {
+        console.error("Failed to add comment");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+  const handleShare = async (postId) => {
+    try {
+      await fetch(`/api/posts/${postId}/share`, { method: "POST" });
+      // Optionally update the UI to reflect the share action
+    } catch (error) {
+      console.error("Error sharing post:", error);
+    }
+  };
+
   return (
     <Flex direction="column" height="100vh">
       <Box bg="blue.500" p={4} color="white">
@@ -76,10 +168,10 @@ const Home = () => {
         <Box flex="1" p={4}>
           <VStack spacing={4}>
             <Box w="100%" p={4} bg="white" boxShadow="md" borderRadius="md">
-              <Textarea
-                placeholder="Share an update..."
+              <RichTextEditor
                 value={newPost}
-                onChange={(e) => setNewPost(e.target.value)}
+                onChange={setNewPost}
+                placeholder="Share an update..."
               />
               <Button mt={2} colorScheme="blue" onClick={handlePostSubmit}>Post</Button>
             </Box>
@@ -101,18 +193,27 @@ const Home = () => {
                 </Box>
               ))}
             </Box>
-            <Box w="100%" p={4} bg="white" boxShadow="md" borderRadius="md">
-              <Text fontSize="xl" mb={4}>Feed</Text>
-              {posts.map((post) => (
-                <Box key={post.id} p={4} bg="gray.50" borderRadius="md" mb={2}>
-                  <Text>{post.content}</Text>
-                  <HStack spacing={4} mt={2}>
-                    <Button leftIcon={<FaThumbsUp />} variant="ghost">Like</Button>
-                    <Button leftIcon={<FaComment />} variant="ghost">Comment</Button>
-                  </HStack>
-                </Box>
-              ))}
-            </Box>
+            <InfiniteScroll
+              dataLength={posts.length}
+              next={fetchMorePosts}
+              hasMore={hasMore}
+              loader={<h4>Loading...</h4>}
+              endMessage={<p style={{ textAlign: 'center' }}><b>Yay! You have seen it all</b></p>}
+            >
+              <Box w="100%" p={4} bg="white" boxShadow="md" borderRadius="md">
+                <Text fontSize="xl" mb={4}>Feed</Text>
+                {posts.map((post) => (
+                  <Box key={post.id} p={4} bg="gray.50" borderRadius="md" mb={2}>
+                    <Text dangerouslySetInnerHTML={{ __html: post.content }} />
+                    <HStack spacing={4} mt={2}>
+                      <Button leftIcon={<FaThumbsUp />} variant="ghost" onClick={() => handleLike(post.id)}>Like</Button>
+                      <Button leftIcon={<FaComment />} variant="ghost" onClick={() => handleComment(post.id)}>Comment</Button>
+                      <Button leftIcon={<FaShare />} variant="ghost" onClick={() => handleShare(post.id)}>Share</Button>
+                    </HStack>
+                  </Box>
+                ))}
+              </Box>
+            </InfiniteScroll>
           </VStack>
         </Box>
       </Flex>
