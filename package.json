@@ -30,6 +30,6 @@
         "react-router-dom": "^6.20.1"
     },
     "prettier": {
-        "printWidth": 99999999
+        "printWidth": 80
     }
 }
