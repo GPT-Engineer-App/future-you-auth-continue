@@ -34,7 +34,8 @@
         "react-dom": "^18.2.0",
         "react-icons": "^4.12.0",
         "react-router-dom": "^6.20.1",
-        "sequelize": "^6.37.3"
+        "sequelize": "^6.37.3",
+        "socket.io-client": "^4.7.5"
     },
     "prettier": {
         "printWidth": 80

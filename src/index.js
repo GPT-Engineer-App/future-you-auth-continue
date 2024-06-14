@@ -3,6 +3,8 @@ const authenticateToken = require('./middleware/auth');
 const { connectDB } = require('./config/database');
 const authRoutes = require('./routes/auth');
 const Job = require('./models/Job');
+const Post = require('./models/Post');
+const Activity = require('./models/Activity');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,13 +12,13 @@ const PORT = process.env.PORT || 3000;
 connectDB();
 
 app.use(express.json());
-app.use('/auth', authenticateToken, authRoutes);
+app.use('/auth', authRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
 });
 
-app.post('/jobs', async (req, res) => {
+app.post('/jobs', authenticateToken, async (req, res) => {
   const { title, description, company, location, salary } = req.body;
   try {
     const job = await Job.create({ title, description, company, location, salary });
@@ -26,7 +28,7 @@ app.post('/jobs', async (req, res) => {
   }
 });
 
-app.get('/jobs', async (req, res) => {
+app.get('/jobs', authenticateToken, async (req, res) => {
   try {
     const jobs = await Job.findAll();
     res.status(200).json(jobs);
@@ -35,7 +37,7 @@ app.get('/jobs', async (req, res) => {
   }
 });
 
-app.put('/jobs/:id', async (req, res) => {
+app.put('/jobs/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { title, description, company, location, salary } = req.body;
   try {
@@ -55,7 +57,7 @@ app.put('/jobs/:id', async (req, res) => {
   }
 });
 
-app.delete('/jobs/:id', async (req, res) => {
+app.delete('/jobs/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const job = await Job.findByPk(id);
